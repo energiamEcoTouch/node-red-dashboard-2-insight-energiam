@@ -1,0 +1,216 @@
+<!-- ═══════════════════════════════════════════════════════════════════
+     REGISTRO DEL NODO — ui-insight
+     node-red-contrib-insight-energiam
+     ═══════════════════════════════════════════════════════════════════ -->
+<script type="text/javascript">
+(function () {
+    RED.nodes.registerType('ui-insight', {
+        category:     'EnergIAM',
+        color:        '#27F555',
+        icon:         'energiam.png',
+        inputs:       1,
+        outputs:      1,
+        paletteLabel: 'insight',
+
+        label: function () {
+            return this.name || 'insight'
+        },
+        labelStyle: function () {
+            return this.name ? 'node_label_italic' : ''
+        },
+
+        defaults: {
+            name:         { value: '' },
+            group:        { value: '', type: 'ui-group', required: true },
+            order:        { value: 0 },
+            width:        { value: 14 },
+            height:       { value: 8 },
+            defaultHoras: { value: '0.25', validate: RED.validators.number() }
+        },
+
+        oneditprepare: function () {
+            // nada extra necesario
+        }
+    })
+})()
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     TEMPLATE DEL EDITOR
+     ═══════════════════════════════════════════════════════════════════ -->
+<script type="text/html" data-template-name="ui-insight">
+
+    <div class="form-row">
+        <label for="node-input-name">
+            <i class="fa fa-tag"></i> Nombre
+        </label>
+        <input type="text" id="node-input-name" placeholder="insight">
+    </div>
+
+    <div class="form-row">
+        <label for="node-input-group">
+            <i class="fa fa-table"></i> Grupo
+        </label>
+        <input type="text" id="node-input-group">
+    </div>
+
+    <div class="form-row">
+        <label for="node-input-width">
+            <i class="fa fa-arrows-h"></i> Tamaño
+        </label>
+        <input type="number" id="node-input-width" placeholder="14" style="width:60px"> columnas &nbsp;
+        <input type="number" id="node-input-height" placeholder="8" style="width:60px"> filas
+    </div>
+
+    <div class="form-row">
+        <label for="node-input-defaultHoras">
+            <i class="fa fa-clock-o"></i> Rango inicial
+        </label>
+        <input type="number" id="node-input-defaultHoras"
+               placeholder="0.25" min="0.083" step="0.083"
+               style="width:90px">
+        <span style="margin-left:8px;color:#888;font-size:12px">
+            horas &nbsp;(0.25 = 15 min · 1 = 1h · 24 = 1 día)
+        </span>
+    </div>
+
+    <!-- Contrato I/O -->
+    <div class="form-row" style="margin-top:16px;padding:12px;background:#f8f8f8;border-radius:4px;border:1px solid #ddd">
+        <p style="margin:0 0 8px;font-weight:700;font-size:13px">
+            <i class="fa fa-exchange"></i>&nbsp; Contrato I/O
+        </p>
+
+        <p style="margin:0 0 4px;font-size:12px;color:#444">
+            <b>SALIDA</b> — El nodo emite automáticamente cuando el usuario interactúa:
+        </p>
+        <pre style="font-size:11px;background:#1e1e1e;color:#9cdcfe;padding:8px;border-radius:3px;overflow-x:auto;margin:0 0 10px">msg.topic   = "insight/query"
+msg.payload = {
+  "desde":       "2024-01-01T00:00:00.000Z",
+  "hasta":       "2024-01-01T00:15:00.000Z",
+  "colecciones": ["id-coleccion-a", "id-col-b"],
+  "horas":       0.25
+}</pre>
+
+        <p style="margin:0 0 4px;font-size:12px;color:#444">
+            <b>ENTRADA</b> — Enviar resultado de la consulta con:
+        </p>
+        <pre style="font-size:11px;background:#1e1e1e;color:#9cdcfe;padding:8px;border-radius:3px;overflow-x:auto;margin:0">msg.topic   = "insight/data"
+msg.payload = {
+  "series":    [ /* ver panel de ayuda */ ],
+  "colLabels": { "Nombre visible": "id-coleccion" }
+}</pre>
+    </div>
+
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     PANEL DE AYUDA
+     ═══════════════════════════════════════════════════════════════════ -->
+<script type="text/html" data-help-name="ui-insight">
+    <p>
+        Widget de <strong>visualización de series temporales</strong> con ECharts 5.5.1 offline,
+        estilo Grafana. Parte del ecosistema <strong>EnergIAM</strong>.
+    </p>
+    <p>
+        El nodo es <em>agnóstico a la fuente de datos</em>: emite query requests
+        que el usuario adapta a su base de datos (MongoDB, InfluxDB, PostgreSQL, API REST, etc.)
+        y recibe los datos ya formateados para graficar.
+    </p>
+
+    <h3>Flujo típico</h3>
+    <pre>
+[ui-insight] ──salida──▶ [función adaptadora BD] ──▶ [BD]
+     ▲                                                  │
+     └─────────── msg.topic="insight/data" ◀────────────┘</pre>
+
+    <h3>SALIDA — Query Request</h3>
+    <p>El nodo emite por su salida cada vez que el usuario cambia el rango,
+    las colecciones activas o presiona Actualizar:</p>
+    <pre>msg.topic   = "insight/query"
+msg.payload = {
+  "desde":       "2024-01-01T00:00:00.000Z",
+  "hasta":       "2024-01-01T00:15:00.000Z",
+  "colecciones": ["id-coleccion-a"],
+  "horas":       0.25
+}</pre>
+    <ul>
+        <li><code>desde</code> / <code>hasta</code>: rango en ISO 8601 UTC.</li>
+        <li><code>colecciones</code>: IDs de las colecciones activas seleccionadas en el widget.</li>
+        <li><code>horas</code>: valor numérico si es rango relativo, <code>null</code> si es absoluto.</li>
+    </ul>
+
+    <h3>ENTRADA — Datos del gráfico</h3>
+    <p>Enviar a la entrada del nodo con <code>msg.topic = "insight/data"</code>:</p>
+    <pre>msg.payload = {
+  "series":    [ &lt;EChartsSerie&gt;, ... ],
+  "colLabels": { "Nombre visible": "id-coleccion" }
+}</pre>
+
+    <h4>Estructura de cada EChartsSerie</h4>
+    <pre>{
+  "name":       "Circuito A · kW",
+  "metric":     "kW",
+  "type":       "line",
+  "yAxisIndex": 0,
+  "data": [
+    [1700000000000, 1.234],
+    [1700000060000, 1.456]
+  ],
+  "smooth":       true,
+  "connectNulls": false,
+  "lineStyle": { "width": 1, "color": "#58a6ff" },
+  "itemStyle": { "color": "#58a6ff" }
+}</pre>
+    <ul>
+        <li><code>name</code>: aparece en la leyenda. Convención: <code>"NombreSerie · unidad"</code></li>
+        <li><code>metric</code>: define el eje Y (p.ej. <code>"kW"</code>, <code>"°C"</code>, <code>"V"</code>).
+            Series con la misma <code>metric</code> comparten eje.</li>
+        <li><code>yAxisIndex</code>: 0 = izquierda, 1 = derecha, 2 = izquierda 2, 3 = derecha 2…</li>
+        <li><code>data</code>: array de <code>[timestamp_ms, valor_numerico]</code>.
+            <code>null</code> es válido para gaps.</li>
+    </ul>
+
+    <h4>colLabels</h4>
+    <pre>{
+  "Circuito A":  "z2m-tghc-H404_LP001",
+  "Circuito B":  "z2m-tghc-H406_LP002"
+}</pre>
+    <p>Las claves son los nombres visibles en el selector del widget.
+    Los valores son los IDs que el nodo usa en <code>colecciones</code> del query.</p>
+
+    <h3>Colores sugeridos para series</h3>
+    <p style="font-family:monospace;font-size:11px">
+        #58a6ff · #3fb950 · #f78166 · #d2a8ff · #ffa657<br>
+        #79c0ff · #56d364 · #ff7b72 · #bc8cff · #ffb366
+    </p>
+
+    <h3>Ejemplo — Función adaptadora MongoDB</h3>
+    <pre>// Entrada: msg.topic === "insight/query"
+const { desde, hasta, colecciones } = msg.payload;
+
+// Armar query para cada colección
+const msgs = colecciones.map((col, i) => ({
+  topic: col,
+  payload: [
+    { time: { $gte: new Date(desde), $lte: new Date(hasta) } },
+    { sort: { time: 1 } }
+  ],
+  parts: { id: Date.now(), type: 'array',
+           count: colecciones.length, index: i }
+}));
+return [msgs];</pre>
+
+    <h3>Configuración del nodo</h3>
+    <ul>
+        <li><strong>Grupo:</strong> grupo de Dashboard 2.0 donde aparecerá el widget.</li>
+        <li><strong>Tamaño:</strong> columnas y filas en la grilla del dashboard.</li>
+        <li><strong>Rango inicial:</strong> horas del rango al arrancar (0.25 = 15 min por defecto).</li>
+    </ul>
+
+    <h3>Dependencias</h3>
+    <ul>
+        <li>Node-RED ≥ 3.0.0</li>
+        <li>@flowfuse/node-red-dashboard ≥ 1.0.0</li>
+        <li>ECharts 5.5.1 — bundleado offline (no requiere CDN)</li>
+    </ul>
+</script>

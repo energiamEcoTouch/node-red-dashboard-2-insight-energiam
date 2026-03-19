@@ -1,0 +1,53 @@
+{
+  "name": "node-red-dashboard-2-insight-energiam",
+  "version": "0.1.0",
+  "description": "Widget ECharts offline para FlowFuse Dashboard 2.0. Visualizador de series temporales estilo Grafana, agnóstico a la fuente de datos. Parte del ecosistema EnergIAM.",
+  "keywords": [
+    "node-red",
+    "energiam",
+    "echarts",
+    "dashboard",
+    "chart",
+    "timeseries",
+    "visualization",
+    "node-red-dashboard-2"
+  ],
+  "author": "EnergIAM EcoTouch",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/energiamEcoTouch/node-red-dashboard-2-insight-energiam.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "node-red": {
+    "version": ">=3.0.0",
+    "nodes": {
+      "ui-insight": "nodes/ui-insight.js"
+    }
+  },
+  "node-red-dashboard-2": {
+    "version": "1.0.0",
+    "widgets": {
+      "ui-insight": {
+        "output": "ui-insight.umd.js",
+        "component": "UIInsight"
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "build:dev": "NODE_ENV=development vite build",
+    "dev": "NODE_ENV=development vite build --watch"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.5.0",
+    "vite": "^5.0.12",
+    "vite-plugin-css-injected-by-js": "^3.3.0"
+  },
+  "peerDependencies": {
+    "@flowfuse/node-red-dashboard": ">=1.0.0"
+  }
+}
