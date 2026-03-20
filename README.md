@@ -1,6 +1,8 @@
-# node-red-contrib-insight-energiam
+# node-red-dashboard-2-insight-energiam
 
 Widget de visualización de series temporales con **ECharts 5.5.1 offline**, estilo Grafana, para **FlowFuse Dashboard 2.0**. Parte del ecosistema [EnergIAM](https://github.com/energiamEcoTouch).
+
+![Insight Test Flow](examples/insight-test-flow.png)
 
 ---
 
@@ -9,22 +11,20 @@ Widget de visualización de series temporales con **ECharts 5.5.1 offline**, est
 - Gráfico de líneas multi-serie con múltiples ejes Y
 - Time picker con rangos rápidos y rango absoluto personalizado
 - Selector de colecciones (series) y métricas (unidades)
-- Downsampling visual automático
 - Leyenda interactiva (click para ocultar/mostrar series)
 - Stats: min / max / avg por serie
 - Panel de opciones: ancho de línea, fill, smooth, offset por serie, colores
 - Descarga PNG y CSV
 - Estado persistente por instancia (rango, colecciones, opciones)
-- **ECharts bundleado — funciona 100% offline, sin CDN**
+- **ECharts 5.5.1 bundleado — funciona 100% offline, sin CDN**
 - Agnóstico a la fuente de datos (MongoDB, InfluxDB, PostgreSQL, API REST, etc.)
 
 ---
 
-## Instalación (usuario final)
+## Instalación
 
 ```bash
-# Desde el contenedor Node-RED
-npm install node-red-contrib-insight-energiam
+npm install node-red-dashboard-2-insight-energiam
 ```
 
 O desde **Manage Palette** en Node-RED buscando `insight-energiam`.
@@ -33,10 +33,10 @@ O desde **Manage Palette** en Node-RED buscando `insight-energiam`.
 
 ## Uso rápido
 
-1. Arrastrar el nodo **ui-insight** al canvas
+1. Arrastrar el nodo **insight** al canvas
 2. Configurar grupo de Dashboard 2.0
 3. Conectar la **salida** a una función que consulte la base de datos
-4. Conectar la salida de esa función de vuelta a la **entrada** del nodo con `msg.topic = "insight/data"`
+4. Devolver el resultado a la **entrada** del nodo con `msg.topic = "insight/data"`
 
 ---
 
@@ -70,13 +70,13 @@ El nodo emite automáticamente cuando el usuario interactúa con el widget:
 {
   "topic": "insight/data",
   "payload": {
-    "series": [ ],
+    "series":    [ ],
     "colLabels": { "Nombre visible": "id-coleccion" }
   }
 }
 ```
 
-#### Estructura de cada EChartsSerie
+#### Estructura de cada serie
 
 ```json
 {
@@ -107,11 +107,13 @@ El nodo emite automáticamente cuando el usuario interactúa con el widget:
 ```json
 {
   "Circuito A": "z2m-tghc-H404_LP001",
-  "Circuito B": "z2m-tghc-H406_LP002"
+  "Circuito B": "z2m-tghc-H406_LP002",
+  "Temperatura": "sensor-temp-01",
+  "Red":         "sensor-red-01"
 }
 ```
 
-Claves = nombres visibles en el selector del widget. Valores = IDs que el nodo usa en el query request.
+Las claves son los nombres visibles en el selector del widget. Los valores son los IDs que el nodo usa en el query request. **Cada serie cuyo nombre no empiece con una de estas claves no se mostrará.**
 
 #### Colores sugeridos
 
@@ -126,7 +128,7 @@ Claves = nombres visibles en el selector del widget. Valores = IDs que el nodo u
 ## Ejemplo — Adaptador MongoDB
 
 ```javascript
-// Nodo función conectado a la salida de ui-insight
+// Nodo función conectado a la salida del nodo insight
 // Entrada: msg.topic === "insight/query"
 
 const { desde, hasta, colecciones } = msg.payload;
@@ -148,7 +150,7 @@ const msgs = colecciones.map((col, i) => ({
 return [msgs];
 ```
 
-Luego cada colección va a su nodo MongoDB4, el resultado pasa por un nodo Join y una función que formatea las series según el contrato de entrada, y vuelve al nodo insight con `msg.topic = "insight/data"`.
+Ver carpeta `examples/` para flujos completos de MongoDB, InfluxDB y PostgreSQL.
 
 ---
 
@@ -156,7 +158,7 @@ Luego cada colección va a su nodo MongoDB4, el resultado pasa por un nodo Join 
 
 ### Prerequisitos
 
-```bash
+```
 node >= 18
 npm >= 9
 ```
@@ -164,8 +166,8 @@ npm >= 9
 ### Clonar y preparar
 
 ```bash
-git clone https://github.com/energiamEcoTouch/node-red-contrib-insight-energiam.git
-cd node-red-contrib-insight-energiam
+git clone https://github.com/energiamEcoTouch/node-red-dashboard-2-insight-energiam.git
+cd node-red-dashboard-2-insight-energiam
 npm install
 ```
 
@@ -175,23 +177,28 @@ npm install
 npm run build
 ```
 
-Esto compila `ui/components/UIInsight.vue` → `ui/ui-insight.umd.js` con Vite.  
-El archivo `.umd.js` resultante **debe incluirse en el commit y en el paquete npm**.
+Compila `ui/components/UIInsight.vue` → `resources/ui-insight.umd.js`.
+El archivo `.umd.js` **debe incluirse en el commit y en el paquete npm**.
 
 ### Estructura del proyecto
 
 ```
-node-red-contrib-insight-energiam/
+node-red-dashboard-2-insight-energiam/
+├── examples/
+│   ├── insight-test-flow.png
+│   └── flows_insight_test.json
 ├── nodes/
-│   ├── ui-insight.js       # Backend Node-RED
-│   └── ui-insight.html     # Editor + ayuda
+│   ├── icons/
+│   │   └── energiam.png
+│   ├── ui-insight.js
+│   └── ui-insight.html
 ├── ui/
 │   ├── components/
-│   │   └── UIInsight.vue   # Componente Vue (fuente)
-│   ├── index.js            # Entry point Vite
-│   └── ui-insight.umd.js  # ← generado por npm run build
+│   │   └── UIInsight.vue
+│   └── index.js
 ├── resources/
-│   └── echarts.min.js      # ECharts 5.5.1 bundleado
+│   ├── echarts.min.js
+│   └── ui-insight.umd.js
 ├── package.json
 ├── vite.config.js
 └── README.md
@@ -200,19 +207,9 @@ node-red-contrib-insight-energiam/
 ### Publicar en npm
 
 ```bash
-# Asegurarse de que el build está actualizado
 npm run build
-
-# Verificar que ui/ui-insight.umd.js existe
-ls -lh ui/ui-insight.umd.js
-
-# Publicar
 npm publish
 ```
-
-### Registrar en el catálogo de Node-RED
-
-Una vez publicado en npm, registrar en [flows.nodered.org/add/node](https://flows.nodered.org/add/node) autenticando con GitHub.
 
 ---
 
@@ -222,7 +219,7 @@ Una vez publicado en npm, registrar en [flows.nodered.org/add/node](https://flow
 |---|---|---|
 | Node-RED | ≥ 3.0.0 | Runtime |
 | @flowfuse/node-red-dashboard | ≥ 1.0.0 | Dashboard 2.0 |
-| ECharts 5.5.1 | bundleado | Gráficos (offline) |
+| ECharts | 5.5.1 bundleado | Gráficos offline |
 
 ---
 
