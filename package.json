@@ -1,6 +1,6 @@
 {
   "name": "node-red-dashboard-2-insight-energiam",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Widget ECharts offline para FlowFuse Dashboard 2.0. Visualizador de series temporales estilo Grafana, agnóstico a la fuente de datos. Parte del ecosistema EnergIAM.",
   "keywords": [
     "node-red",
