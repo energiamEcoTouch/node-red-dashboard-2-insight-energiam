@@ -2,8 +2,6 @@
 
 Widget de visualización de series temporales con **ECharts 5.5.1 offline**, estilo Grafana, para **FlowFuse Dashboard 2.0**. Parte del ecosistema [EnergIAM](https://github.com/energiamEcoTouch).
 
-![Insight Test Flow](examples/insight-test-flow.png)
-
 ---
 
 ## Características
@@ -37,6 +35,48 @@ O desde **Manage Palette** en Node-RED buscando `insight-energiam`.
 2. Configurar grupo de Dashboard 2.0
 3. Conectar la **salida** a una función que consulte la base de datos
 4. Devolver el resultado a la **entrada** del nodo con `msg.topic = "insight/data"`
+
+---
+
+## Examples
+
+### Flow de prueba con datos mock
+
+Incluye simulador dinámico con 8 métricas (kW, kW-A/B/C, V, A, Hz, cos φ), ejemplos de JSON para el nodo device-simulator y un mock que responde al rango de tiempo seleccionado en el widget.
+
+![Insight Test Flow](examples/insight-test-flow.png)
+
+📄 [`examples/flows_insight_test.json`](examples/flows_insight_test.json)
+
+---
+
+### Flow adaptador MongoDB
+
+Ingreso de datos desde el nodo device-simulator hacia MongoDB con normalización. Rama de query que responde a los eventos del widget (set_horas, refresh, rango absoluto) y formatea las series para ECharts.
+
+![Insight MongoDB Flow](examples/insight-mongoDB-flow.png)
+
+📄 [`examples/flows_insight_mongo.json`](examples/flows_insight_mongo.json)
+
+**Esquema de documento en MongoDB:**
+```json
+{
+  "time":         "2026-03-20T20:10:01.971Z",
+  "device":       "nombre-dispositivo",
+  "device_model": "unknown",
+  "metrics": {
+    "power":        5305.797,
+    "power_a":      1622.233,
+    "power_b":      1414.204,
+    "power_c":      1686.32,
+    "voltage_a":    218.759,
+    "current_a":    8.951,
+    "ac_frequency": 50,
+    "temperature":  20.976,
+    "power_factor": 91.542
+  }
+}
+```
 
 ---
 
@@ -125,35 +165,6 @@ Las claves son los nombres visibles en el selector del widget. Los valores son l
 
 ---
 
-## Ejemplo — Adaptador MongoDB
-
-```javascript
-// Nodo función conectado a la salida del nodo insight
-// Entrada: msg.topic === "insight/query"
-
-const { desde, hasta, colecciones } = msg.payload;
-
-const msgs = colecciones.map((col, i) => ({
-    topic: col,
-    payload: [
-        { time: { $gte: new Date(desde), $lte: new Date(hasta) } },
-        { sort: { time: 1 } }
-    ],
-    parts: {
-        id:    Date.now(),
-        type:  'array',
-        count: colecciones.length,
-        index: i
-    }
-}));
-
-return [msgs];
-```
-
-Ver carpeta `examples/` para flujos completos de MongoDB, InfluxDB y PostgreSQL.
-
----
-
 ## Para desarrolladores — Build y publicación
 
 ### Prerequisitos
@@ -186,7 +197,9 @@ El archivo `.umd.js` **debe incluirse en el commit y en el paquete npm**.
 node-red-dashboard-2-insight-energiam/
 ├── examples/
 │   ├── insight-test-flow.png
-│   └── flows_insight_test.json
+│   ├── insight-mongoDB-flow.png
+│   ├── flows_insight_test.json
+│   └── flows_insight_mongo.json
 ├── nodes/
 │   ├── icons/
 │   │   └── energiam.png
