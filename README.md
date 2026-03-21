@@ -88,6 +88,8 @@ Ingreso de datos desde el nodo device-simulator hacia InfluxDB. Rama de query qu
 
 Requiere el nodo `node-red-contrib-influxdb` instalado en Node-RED.
 
+![Insight InfluxDB Flow](examples/insight-influxDB.png)
+
 📄 [`examples/flows_influxDB.json`](examples/flows_influxDB.json)
 
 **Configuración necesaria antes de importar el flujo:**
