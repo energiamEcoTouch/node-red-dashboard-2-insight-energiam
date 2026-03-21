@@ -27,6 +27,8 @@ npm install node-red-dashboard-2-insight-energiam
 
 O desde **Manage Palette** en Node-RED buscando `insight-energiam`.
 
+> **Requisito:** tener instalado `@flowfuse/node-red-dashboard` (Dashboard 2.0) antes de instalar este nodo.
+
 ---
 
 ## Uso rápido
@@ -80,6 +82,42 @@ Ingreso de datos desde el nodo device-simulator hacia MongoDB con normalización
 
 ---
 
+### Flow adaptador InfluxDB v2 / v3
+
+Ingreso de datos desde el nodo device-simulator hacia InfluxDB. Rama de query que responde a los eventos del widget usando Flux y formatea las series para ECharts.
+
+Requiere el nodo `node-red-contrib-influxdb` instalado en Node-RED.
+
+📄 [`examples/flows_influxDB.json`](examples/flows_influxDB.json)
+
+**Configuración necesaria antes de importar el flujo:**
+
+1. Tener InfluxDB v2 o v3 corriendo (local o remoto)
+2. Crear una organización y un bucket en InfluxDB
+3. Generar un token de acceso en InfluxDB (`Data → API Tokens`)
+4. Abrir el nodo de configuración **InfluxDB Insight** y completar:
+   - URL: `http://localhost:8086`
+   - Token: *(tu token)*
+   - Organización: *(tu org)*
+5. En el nodo **Dispatcher**, verificar que el nombre del bucket coincida con el creado
+
+**Esquema de measurement en InfluxDB:**
+
+```
+measurement: nombre-del-circuito
+fields:
+  power_a     float   (W)
+  power_b     float   (W)
+  power_c     float   (W)
+  voltage_a   float   (V)
+  current_a   float   (A)
+  temperature float   (°C)
+```
+
+> Los valores de potencia se almacenan en **Watts** y el formateador los convierte a **kW** automáticamente.
+
+---
+
 ## Contrato I/O
 
 ### SALIDA — Query Request
@@ -88,21 +126,29 @@ El nodo emite automáticamente cuando el usuario interactúa con el widget:
 
 ```json
 {
-  "topic": "insight/query",
   "payload": {
-    "desde":       "2024-01-01T00:00:00.000Z",
-    "hasta":       "2024-01-01T00:15:00.000Z",
-    "colecciones": ["id-coleccion-a", "id-coleccion-b"],
-    "horas":       0.25
+    "action": "set_horas",
+    "value":  0.25
+  }
+}
+```
+
+```json
+{
+  "payload": {
+    "action": "set_absoluto",
+    "value": {
+      "desde": "2024-01-01T00:00:00.000Z",
+      "hasta": "2024-01-01T00:15:00.000Z"
+    }
   }
 }
 ```
 
 | Campo | Descripción |
 |---|---|
-| `desde` / `hasta` | ISO 8601 UTC |
-| `colecciones` | IDs de colecciones activas en el widget |
-| `horas` | número si es rango relativo, `null` si es absoluto |
+| `action` | `set_horas` para rango relativo, `set_absoluto` para rango fijo |
+| `value` | número de horas (relativo) u objeto `{desde, hasta}` ISO 8601 UTC (absoluto) |
 
 ### ENTRADA — Datos del gráfico
 
@@ -148,8 +194,7 @@ El nodo emite automáticamente cuando el usuario interactúa con el widget:
 {
   "Circuito A": "z2m-tghc-H404_LP001",
   "Circuito B": "z2m-tghc-H406_LP002",
-  "Temperatura": "sensor-temp-01",
-  "Red":         "sensor-red-01"
+  "Temperatura": "sensor-temp-01"
 }
 ```
 
@@ -199,7 +244,8 @@ node-red-dashboard-2-insight-energiam/
 │   ├── insight-test-flow.png
 │   ├── insight-mongoDB-flow.png
 │   ├── flows_insight_test.json
-│   └── flows_insight_mongo.json
+│   ├── flows_insight_mongo.json
+│   └── flows_influxDB.json
 ├── nodes/
 │   ├── icons/
 │   │   └── energiam.png

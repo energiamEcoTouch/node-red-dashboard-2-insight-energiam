@@ -1,0 +1,338 @@
+[
+    {
+        "id": "insight-influx-tab",
+        "type": "tab",
+        "label": "Insight — InfluxDB",
+        "disabled": false,
+        "info": "Adaptador InfluxDB v2 para nodo ui-insight.\nUsa el nodo node-red-contrib-influxdb (influxdb batch).\n\nEsquema esperado en cada measurement:\n  measurement: nombre de la colección\n  fields: power, power_a, power_b, power_c, voltage_a, current_a, temperature\n  tags: opcionales\n\nConfigurar:\n1. El nodo influxdb-out con tu servidor, org y bucket\n2. La lista de colecciones (measurements) en el editor del nodo insight"
+    },
+    {
+        "id": "4c0c7deab6a4804f",
+        "type": "group",
+        "z": "insight-influx-tab",
+        "name": "Ingreso de datos a influxDB",
+        "style": {
+            "stroke": "#92d04f",
+            "fill": "#e3f3d3",
+            "label": true
+        },
+        "nodes": [
+            "b766fcf9fbb9bcbc",
+            "bc86869bc01cac78",
+            "0001d439793873ec",
+            "7a28bf32ff2ba489"
+        ],
+        "x": 74,
+        "y": 39,
+        "w": 732,
+        "h": 122
+    },
+    {
+        "id": "edbad4b0017750fd",
+        "type": "group",
+        "z": "insight-influx-tab",
+        "name": "Query",
+        "style": {
+            "stroke": "#c8e7a7",
+            "fill": "#e3f3d3",
+            "label": true
+        },
+        "nodes": [
+            "insight-influx-dispatcher",
+            "insight-influx-query",
+            "insight-influx-format",
+            "c63071abe0fdb5cd"
+        ],
+        "x": 74,
+        "y": 239,
+        "w": 952,
+        "h": 82
+    },
+    {
+        "id": "insight-influx-node",
+        "type": "ui-insight",
+        "z": "insight-influx-tab",
+        "name": "Insight InfluxDB",
+        "group": "insight-influx-group",
+        "order": 1,
+        "width": 14,
+        "height": 14,
+        "defaultHoras": "0.25",
+        "x": 1160,
+        "y": 280,
+        "wires": [
+            [
+                "insight-influx-dispatcher"
+            ]
+        ]
+    },
+    {
+        "id": "insight-influx-dispatcher",
+        "type": "function",
+        "z": "insight-influx-tab",
+        "g": "edbad4b0017750fd",
+        "name": "Dispatcher — preparar queries Influx",
+        "func": "const p = msg.payload;\nif (!p || !p.action) return null;\n\n// Solo procesar cambios de rango\nif (p.action !== 'set_horas' && p.action !== 'set_absoluto') return null;\n\nlet desde, hasta;\n\nif (p.action === 'set_horas') {\n    const horas = parseFloat(p.value) || 0.25;\n    hasta = new Date().toISOString();\n    desde = new Date(Date.now() - horas * 3600000).toISOString();\n} else {\n    // absoluto\n    desde = p.value.desde;\n    hasta = p.value.hasta;\n}\n\nconst savedState = msg.payload.value || {};\nconst colsAct = savedState.colsAct || ['circuito-a'];\n\nconst measurementFilter = colsAct\n    .map(c => `r._measurement == \"${c}\"`)\n    .join(' or ');\n\nconst fluxQuery = `\nfrom(bucket: \"test\")\n  |> range(start: ${desde}, stop: ${hasta})\n  |> filter(fn: (r) => ${measurementFilter})\n  |> filter(fn: (r) =>\n       r._field == \"power\" or\n       r._field == \"power_a\" or\n       r._field == \"power_b\" or\n       r._field == \"power_c\" or\n       r._field == \"voltage_a\" or\n       r._field == \"current_a\" or\n       r._field == \"temperature\"\n  )\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"])\n`;\n\nmsg.query   = fluxQuery;\nmsg.payload = fluxQuery;\nmsg.colecciones = colsAct;\nmsg.desde       = desde;\nmsg.hasta       = hasta;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 280,
+        "wires": [
+            [
+                "insight-influx-query"
+            ]
+        ]
+    },
+    {
+        "id": "insight-influx-query",
+        "type": "influxdb in",
+        "z": "insight-influx-tab",
+        "g": "edbad4b0017750fd",
+        "influxdb": "insight-influx-client",
+        "name": "Query Flux",
+        "query": "",
+        "rawOutput": false,
+        "precision": "",
+        "retentionPolicy": "",
+        "org": "energiam",
+        "x": 690,
+        "y": 280,
+        "wires": [
+            [
+                "insight-influx-format"
+            ]
+        ]
+    },
+    {
+        "id": "insight-influx-format",
+        "type": "function",
+        "z": "insight-influx-tab",
+        "g": "edbad4b0017750fd",
+        "name": "Formatear series ECharts",
+        "func": "// ── Paleta de colores ────────────────────────────────────────────────────\nconst paleta = [\n    '#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657',\n    '#79c0ff','#56d364','#ff7b72','#bc8cff','#ffb366',\n    '#388bfd','#2ea043','#da3633','#8957e5'\n];\n\nconst toKW = w => (w != null) ? parseFloat((w / 1000).toFixed(3)) : null;\nconst toF  = (v, d) => (v != null) ? parseFloat(parseFloat(v).toFixed(d)) : null;\n\nconst mkSerie = (name, metric, yIdx, color, data, dash) => ({\n    name, metric,\n    type: 'line',\n    yAxisIndex: yIdx,\n    data,\n    smooth: true,\n    connectNulls: false,\n    lineStyle: { width: 1, color, ...(dash ? { type: dash } : {}) },\n    itemStyle: { color }\n});\n\n// InfluxDB devuelve array plano de rows con _measurement, _time y los campos como propiedades\nconst rows        = msg.payload || [];\nconst colecciones = msg.colecciones || [];\nconst series      = [];\nconst colLabels   = {};\n\n// Agrupar rows por measurement\nconst porMedicion = {};\nrows.forEach(row => {\n    const m = row._measurement;\n    if (!porMedicion[m]) porMedicion[m] = [];\n    porMedicion[m].push(row);\n});\n\nlet colIdx = 0;\nfor (const col of colecciones) {\n    const docs = porMedicion[col] || [];\n    if (!docs.length) { colIdx++; continue; }\n\n    const label = col;\n    const color = paleta[colIdx % paleta.length];\n    const m0    = docs[0];\n\n    const toMs = d => new Date(d._time).getTime();\n\n    // kW total\n    if (m0.power !== undefined || m0.power_a !== undefined) {\n        const data = docs.map(d => {\n            const w = (d.power != null) ? d.power\n                    : ((d.power_a || 0) + (d.power_b || 0) + (d.power_c || 0));\n            return [toMs(d), toKW(w)];\n        }).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW', 'kW', 0, color, data));\n    }\n    if (m0.power_a !== undefined) {\n        const data = docs.map(d => [toMs(d), toKW(d.power_a)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-A', 'kW-A', 0, color, data, 'dashed'));\n    }\n    if (m0.power_b !== undefined && m0.power_b !== null) {\n        const data = docs.map(d => [toMs(d), toKW(d.power_b)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-B', 'kW-B', 0, color, data, 'dotted'));\n    }\n    if (m0.power_c !== undefined && m0.power_c !== null) {\n        const data = docs.map(d => [toMs(d), toKW(d.power_c)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-C', 'kW-C', 0, color, data, 'dotted'));\n    }\n    if (m0.temperature !== undefined) {\n        const data = docs.map(d => [toMs(d), toF(d.temperature, 1)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · °C', '°C', 1, color, data));\n    }\n    if (m0.voltage_a !== undefined) {\n        const data = docs.map(d => [toMs(d), toF(d.voltage_a, 1)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · V', 'V', 2, color, data));\n    }\n    if (m0.current_a !== undefined) {\n        const data = docs.map(d => [toMs(d), toF(d.current_a, 2)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · A', 'A', 3, color, data));\n    }\n\n    colLabels[label] = col;\n    colIdx++;\n}\n\nmsg.topic   = 'insight/data';\nmsg.payload = { series, colLabels };\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 890,
+        "y": 280,
+        "wires": [
+            [
+                "insight-influx-node"
+            ]
+        ]
+    },
+    {
+        "id": "b766fcf9fbb9bcbc",
+        "type": "comment",
+        "z": "insight-influx-tab",
+        "g": "4c0c7deab6a4804f",
+        "name": "TOKEN",
+        "info": "Es necesario contar con el TOKEN de influxDB, \ny completar los datos de la la instalacion de \ninflux segun correspondan.\nLa base de datos debe estar funcional para \nque este flujo funcione.",
+        "x": 690,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "bc86869bc01cac78",
+        "type": "device-simulator",
+        "z": "insight-influx-tab",
+        "g": "4c0c7deab6a4804f",
+        "name": "Simulador circuito-a",
+        "topic": "influx/write",
+        "template": "{\n    \"measurement\": \"circuito-a\",\n    \"power_a\": 1200,\n    \"power_b\": 800,\n    \"power_c\": 600,\n    \"voltage_a\": 220.5,\n    \"current_a\": 5.4,\n    \"temperature\": 23.5\n}",
+        "fields": "[{\"key\":\"power_a\",\"enabled\":true,\"min\":1200,\"max\":900,\"triggerOnChange\":true},{\"key\":\"power_b\",\"enabled\":true,\"min\":800,\"max\":420,\"triggerOnChange\":true},{\"key\":\"power_c\",\"enabled\":true,\"min\":600,\"max\":354,\"triggerOnChange\":true},{\"key\":\"voltage_a\",\"enabled\":true,\"min\":220.5,\"max\":226,\"triggerOnChange\":true},{\"key\":\"current_a\",\"enabled\":true,\"min\":5.4,\"max\":3,\"triggerOnChange\":true},{\"key\":\"temperature\",\"enabled\":true,\"min\":23.5,\"max\":15,\"triggerOnChange\":true}]",
+        "intervalMode": "random",
+        "intervalFixed": "10000",
+        "intervalMin": 5000,
+        "intervalMax": 15000,
+        "startupDelay": 0,
+        "debugActive": false,
+        "x": 220,
+        "y": 120,
+        "wires": [
+            [
+                "0001d439793873ec"
+            ]
+        ]
+    },
+    {
+        "id": "0001d439793873ec",
+        "type": "function",
+        "z": "insight-influx-tab",
+        "g": "4c0c7deab6a4804f",
+        "name": "Preparar para influxdb out",
+        "func": "const data = msg.payload;\nif (!data) return null;\n\n// El nodo influxdb out espera:\n// msg.measurement — nombre de la medición\n// msg.payload — objeto con los campos\n\nmsg.measurement = data.measurement || 'circuito-a';\n\ndelete data.measurement;\ndelete data.timestamp;\n\nmsg.payload = data;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 120,
+        "wires": [
+            [
+                "7a28bf32ff2ba489"
+            ]
+        ]
+    },
+    {
+        "id": "7a28bf32ff2ba489",
+        "type": "influxdb out",
+        "z": "insight-influx-tab",
+        "g": "4c0c7deab6a4804f",
+        "influxdb": "insight-influx-client",
+        "name": "Escribir en InfluxDB",
+        "measurement": "",
+        "precision": "ms",
+        "retentionPolicy": "",
+        "database": "test",
+        "retentionPolicyV18Flux": "",
+        "org": "energiam",
+        "bucket": "test",
+        "x": 690,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "c63071abe0fdb5cd",
+        "type": "inject",
+        "z": "insight-influx-tab",
+        "g": "edbad4b0017750fd",
+        "name": "",
+        "props": [
+            {
+                "p": "payload.action",
+                "v": "set_horas",
+                "vt": "str"
+            },
+            {
+                "p": "payload.value",
+                "v": "0.25",
+                "vt": "num"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "2",
+        "topic": "",
+        "x": 180,
+        "y": 280,
+        "wires": [
+            [
+                "insight-influx-dispatcher"
+            ]
+        ]
+    },
+    {
+        "id": "insight-influx-group",
+        "type": "ui-group",
+        "name": "Insight InfluxDB",
+        "page": "insight-influx-page",
+        "width": 14,
+        "height": 1,
+        "order": 1,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "insight-influx-client",
+        "type": "influxdb",
+        "hostname": "localhost",
+        "port": "8086",
+        "protocol": "http",
+        "database": "energiam",
+        "name": "InfluxDB Insight",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://localhost:8086",
+        "rejectUnauthorized": false
+    },
+    {
+        "id": "insight-influx-page",
+        "type": "ui-page",
+        "name": "Insight InfluxDB",
+        "ui": "2880a75520fcc1d5",
+        "path": "/insight-influx",
+        "icon": "database",
+        "layout": "grid",
+        "theme": "insight-influx-theme",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": "0",
+                "cols": "3"
+            },
+            {
+                "name": "Tablet",
+                "px": "576",
+                "cols": "6"
+            },
+            {
+                "name": "Small Desktop",
+                "px": "768",
+                "cols": "9"
+            },
+            {
+                "name": "Desktop",
+                "px": "1024",
+                "cols": "12"
+            }
+        ],
+        "order": 11,
+        "className": "",
+        "visible": true,
+        "disabled": false
+    },
+    {
+        "id": "2880a75520fcc1d5",
+        "type": "ui-base",
+        "name": "My Dashboard",
+        "path": "/dashboard",
+        "appIcon": "",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-notification",
+            "ui-control"
+        ],
+        "showPathInSidebar": false,
+        "headerContent": "page",
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": true,
+        "notificationDisplayTime": 1,
+        "showDisconnectNotification": true,
+        "allowInstall": false
+    },
+    {
+        "id": "insight-influx-theme",
+        "type": "ui-theme",
+        "name": "Dark EnergIAM",
+        "colors": {
+            "surface": "#24292e",
+            "primary": "#58a6ff",
+            "bgPage": "#0d1117",
+            "groupBg": "#161b22",
+            "groupOutline": "#30363d"
+        },
+        "sizes": {
+            "density": "default",
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    }
+]
