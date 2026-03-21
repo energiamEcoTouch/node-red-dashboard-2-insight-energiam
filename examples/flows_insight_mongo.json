@@ -1,0 +1,435 @@
+[
+    {
+        "id": "insight-mongo-tab",
+        "type": "tab",
+        "label": "Insight — MongoDB",
+        "disabled": false,
+        "info": "Adaptador MongoDB para nodo ui-insight.\nEsquema esperado en cada colección:\n{ time: Date, metrics: { power, power_a, power_b, power_c, voltage_a, current_a, temperature } }\n\nConfigurar:\n1. El nodo mongodb4-client con tu conexión\n2. La lista de colecciones en el nodo insight (editor del nodo)\n3. El nodo 'Formatear series' si tus campos tienen nombres distintos"
+    },
+    {
+        "id": "b48be5b81f5a00a3",
+        "type": "group",
+        "z": "insight-mongo-tab",
+        "name": "Ingreso de datos a Mongo DB",
+        "style": {
+            "stroke": "#c8e7a7",
+            "label": true,
+            "fill": "#e3f3d3"
+        },
+        "nodes": [
+            "56c1ce7c970f60cb",
+            "4f5d1d1b71c53795",
+            "75bae3cad7f9a834",
+            "ba25c4f15695b9a9",
+            "3f90e6f247030547"
+        ],
+        "x": 114,
+        "y": 79,
+        "w": 1112,
+        "h": 122
+    },
+    {
+        "id": "d9e1ef904a8593d2",
+        "type": "group",
+        "z": "insight-mongo-tab",
+        "name": "Rama Query",
+        "style": {
+            "stroke": "#c8e7a7",
+            "label": true,
+            "fill": "#e3f3d3"
+        },
+        "nodes": [
+            "insight-mongo-dispatcher",
+            "insight-mongo-query",
+            "insight-mongo-format",
+            "75cb8c717e76ee01"
+        ],
+        "x": 114,
+        "y": 259,
+        "w": 1072,
+        "h": 82
+    },
+    {
+        "id": "401bd8945de1bbba",
+        "type": "group",
+        "z": "insight-mongo-tab",
+        "name": "Defino estructura",
+        "style": {
+            "stroke": "#c8e7a7",
+            "label": true,
+            "fill": "#e3f3d3"
+        },
+        "nodes": [
+            "8f33f10f3f6b1a78",
+            "602be0ed62b06752"
+        ],
+        "x": 114,
+        "y": 419,
+        "w": 432,
+        "h": 82
+    },
+    {
+        "id": "insight-mongo-node",
+        "type": "ui-insight",
+        "z": "insight-mongo-tab",
+        "name": "Insight MongoDB",
+        "group": "insight-mongo-group",
+        "order": 1,
+        "width": 14,
+        "height": 14,
+        "defaultHoras": "0.25",
+        "x": 950,
+        "y": 460,
+        "wires": [
+            [
+                "insight-mongo-dispatcher"
+            ]
+        ]
+    },
+    {
+        "id": "insight-mongo-dispatcher",
+        "type": "function",
+        "z": "insight-mongo-tab",
+        "g": "d9e1ef904a8593d2",
+        "name": "Dispatcher — preparar queries MongoDB",
+        "func": "const action = msg.payload && msg.payload.action;\nconst value  = msg.payload && msg.payload.value;\n\nlet desde, hasta;\n\nif (msg.payload && msg.payload.desde) {\n    desde = new Date(msg.payload.desde);\n    hasta = new Date(msg.payload.hasta);\n\n} else if (action === 'set_horas') {\n    const horas = Math.min(Number(value), 720);\n    flow.set('insight_horas', horas);\n    hasta = new Date();\n    desde = new Date(Date.now() - horas * 3600000);\n\n} else if (action === 'refresh' || action === 'get_state') {\n    const horas = flow.get('insight_horas') || 0.25;\n    hasta = new Date();\n    desde = new Date(Date.now() - horas * 3600000);\n\n} else if (action === 'set_absoluto' && value) {\n    desde = new Date(value.desde);\n    hasta = new Date(value.hasta);\n\n} else if (action === 'save_state' && value) {\n    if (value.tpAbsoluto && value.tpFrom && value.tpTo) {\n        desde = new Date(value.tpFrom);\n        hasta = new Date(value.tpTo);\n    } else {\n        const horas = value.rangoActivo || 0.25;\n        flow.set('insight_horas', horas);\n        hasta = new Date();\n        desde = new Date(Date.now() - horas * 3600000);\n    }\n\n} else {\n    return null;\n}\n\nif (!desde || !hasta || hasta <= desde) return null;\n\nconst colecciones = ['insight'];\n\nconst msgs = colecciones.map((col, i) => ({\n    topic: col,\n    payload: [\n        { time: { $gte: desde, $lte: hasta } },\n        { sort: { time: 1 } }\n    ],\n    parts: {\n        id:    Date.now(),\n        type:  'array',\n        count: colecciones.length,\n        index: i\n    }\n}));\n\nreturn [msgs];",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 500,
+        "y": 300,
+        "wires": [
+            [
+                "insight-mongo-query"
+            ]
+        ]
+    },
+    {
+        "id": "insight-mongo-query",
+        "type": "mongodb4",
+        "z": "insight-mongo-tab",
+        "g": "d9e1ef904a8593d2",
+        "clientNode": "75a0bc5a446b5d67",
+        "mode": "collection",
+        "collection": "insight",
+        "operation": "find",
+        "output": "toArray",
+        "maxTimeMS": "15000",
+        "handleDocId": false,
+        "name": "Query colección dinámica",
+        "x": 810,
+        "y": 300,
+        "wires": [
+            [
+                "insight-mongo-format"
+            ]
+        ]
+    },
+    {
+        "id": "insight-mongo-format",
+        "type": "function",
+        "z": "insight-mongo-tab",
+        "g": "d9e1ef904a8593d2",
+        "name": "Formatear series ECharts",
+        "func": "const paleta = [\n    '#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657',\n    '#79c0ff','#56d364','#ff7b72','#bc8cff','#ffb366',\n    '#388bfd','#2ea043','#da3633','#8957e5'\n];\n\nconst toMs = d => new Date(d.time).getTime();\nconst toKW = w => (w != null) ? parseFloat((w / 1000).toFixed(3)) : null;\nconst toF  = (v, dec) => (v != null) ? parseFloat(parseFloat(v).toFixed(dec)) : null;\n\nconst mkSerie = (name, metric, yIdx, color, data, dash) => ({\n    name, metric, type: 'line', yAxisIndex: yIdx, data,\n    smooth: true, connectNulls: false,\n    lineStyle: { width: 1, color, ...(dash ? { type: dash } : {}) },\n    itemStyle: { color }\n});\n\n// Normalizar entrada: puede llegar como array plano o como {col: [docs]}\nlet resultados = {};\nif (Array.isArray(msg.payload)) {\n    resultados = { [msg.topic || 'insight']: msg.payload };\n} else {\n    resultados = msg.payload;\n}\n\nconst series    = [];\nconst colLabels = {};\nlet   colIdx    = 0;\n\nfor (const [col, docs] of Object.entries(resultados)) {\n    if (!docs || docs.length === 0) { colIdx++; continue; }\n\n    const label = col;\n    const color = paleta[colIdx % paleta.length];\n    const m0    = docs[0]?.metrics || {};\n\n    if (m0.power !== undefined) {\n        const data = docs.map(d => [toMs(d), toKW(d.metrics?.power)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW', 'kW', 0, color, data));\n    }\n    if (m0.power_a !== undefined) {\n        const data = docs.map(d => [toMs(d), toKW(d.metrics?.power_a)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-A', 'kW-A', 0, color, data, 'dashed'));\n    }\n    if (m0.power_b !== undefined && m0.power_b !== null) {\n        const data = docs.map(d => [toMs(d), toKW(d.metrics?.power_b)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-B', 'kW-B', 0, color, data, 'dotted'));\n    }\n    if (m0.power_c !== undefined && m0.power_c !== null) {\n        const data = docs.map(d => [toMs(d), toKW(d.metrics?.power_c)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-C', 'kW-C', 0, color, data, 'dotted'));\n    }\n    if (m0.voltage_a !== undefined) {\n        const data = docs.map(d => [toMs(d), toF(d.metrics?.voltage_a, 1)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · V', 'V', 2, color, data));\n    }\n    if (m0.current_a !== undefined) {\n        const data = docs.map(d => [toMs(d), toF(d.metrics?.current_a, 2)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · A', 'A', 3, color, data));\n    }\n    if (m0.ac_frequency !== undefined) {\n        const data = docs.map(d => [toMs(d), toF(d.metrics?.ac_frequency, 2)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie('Red · Hz', 'Hz', 1, color, data));\n    }\n    if (m0.temperature !== undefined) {\n        const data = docs.map(d => [toMs(d), toF(d.metrics?.temperature, 1)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie('Temperatura · °C', '°C', 1, color, data));\n    }\n    if (m0.power_factor !== undefined) {\n        const data = docs.map(d => [toMs(d), toF((d.metrics?.power_factor) / 100, 3)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · cos φ', 'cos φ', 1, color, data));\n    }\n\n    colLabels[label] = col;\n    colIdx++;\n}\n\nif (series.find(s => s.metric === '°C'))  colLabels['Temperatura'] = 'temperatura';\nif (series.find(s => s.metric === 'Hz'))  colLabels['Red']         = 'red';\n\nmsg.topic   = 'insight/data';\nmsg.payload = { series, colLabels };\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1050,
+        "y": 300,
+        "wires": [
+            [
+                "insight-mongo-node"
+            ]
+        ]
+    },
+    {
+        "id": "56c1ce7c970f60cb",
+        "type": "device-simulator",
+        "z": "insight-mongo-tab",
+        "g": "b48be5b81f5a00a3",
+        "name": "Metrica",
+        "topic": "insight/data",
+        "template": "{\n    \"power\": 6549.841,\n    \"power_a\": 1997.344,\n    \"power_b\": 1971.006,\n    \"power_c\": 1841.509,\n    \"voltage_a\": 216.523,\n    \"current_a\": 10.164,\n    \"ac_frequency\": 50,\n    \"temperature\": 26.926,\n    \"power_factor\": 92\n}",
+        "fields": "[{\"key\":\"power\",\"enabled\":true,\"min\":6549.841,\"max\":4752,\"triggerOnChange\":true},{\"key\":\"power_a\",\"enabled\":true,\"min\":1997.344,\"max\":1304,\"triggerOnChange\":true},{\"key\":\"power_b\",\"enabled\":true,\"min\":1971.006,\"max\":1145,\"triggerOnChange\":true},{\"key\":\"power_c\",\"enabled\":true,\"min\":1841.509,\"max\":1245,\"triggerOnChange\":true},{\"key\":\"voltage_a\",\"enabled\":true,\"min\":216.523,\"max\":224,\"triggerOnChange\":true},{\"key\":\"current_a\",\"enabled\":true,\"min\":10.164,\"max\":8.74,\"triggerOnChange\":true},{\"key\":\"ac_frequency\",\"enabled\":false,\"min\":50,\"max\":50,\"triggerOnChange\":false},{\"key\":\"temperature\",\"enabled\":true,\"min\":26.926,\"max\":14,\"triggerOnChange\":true},{\"key\":\"power_factor\",\"enabled\":true,\"min\":92,\"max\":87,\"triggerOnChange\":true}]",
+        "intervalMode": "random",
+        "intervalFixed": "500000",
+        "intervalMin": "10000",
+        "intervalMax": "60000",
+        "startupDelay": 0,
+        "debugActive": false,
+        "x": 220,
+        "y": 160,
+        "wires": [
+            [
+                "75bae3cad7f9a834"
+            ]
+        ]
+    },
+    {
+        "id": "4f5d1d1b71c53795",
+        "type": "mongodb4",
+        "z": "insight-mongo-tab",
+        "g": "b48be5b81f5a00a3",
+        "clientNode": "75a0bc5a446b5d67",
+        "mode": "collection",
+        "collection": "insight",
+        "operation": "insertOne",
+        "output": "toArray",
+        "maxTimeMS": "0",
+        "handleDocId": false,
+        "name": "MongoDB a insight",
+        "x": 1070,
+        "y": 160,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "8f33f10f3f6b1a78",
+        "type": "device-simulator",
+        "z": "insight-mongo-tab",
+        "g": "401bd8945de1bbba",
+        "name": "Estructura de datos",
+        "topic": "insight/data",
+        "template": "{\n    \"series\": [\n        {\n            \"name\": \"Circuito A · kW\",\n            \"metric\": \"kW\",\n            \"type\": \"line\",\n            \"yAxisIndex\": 0,\n            \"data\": [],\n            \"smooth\": true, \"connectNulls\": false,\n            \"lineStyle\": { \"width\": 1, \"color\": \"#58a6ff\" },\n            \"itemStyle\": { \"color\": \"#58a6ff\" }\n        },\n        {\n            \"name\": \"Circuito B · kW\",\n            \"metric\": \"kW\",\n            \"type\": \"line\",\n            \"yAxisIndex\": 0,\n            \"data\": [],\n            \"smooth\": true, \"connectNulls\": false,\n            \"lineStyle\": { \"width\": 1, \"color\": \"#3fb950\" },\n            \"itemStyle\": { \"color\": \"#3fb950\" }\n        },\n        {\n            \"name\": \"Circuito C · kW\",\n            \"metric\": \"kW\",\n            \"type\": \"line\",\n            \"yAxisIndex\": 0,\n            \"data\": [],\n            \"smooth\": true, \"connectNulls\": false,\n            \"lineStyle\": { \"width\": 1, \"color\": \"#f78166\" },\n            \"itemStyle\": { \"color\": \"#f78166\" }\n        },\n        {\n            \"name\": \"Temperatura · °C\",\n            \"metric\": \"°C\",\n            \"type\": \"line\",\n            \"yAxisIndex\": 1,\n            \"data\": [],\n            \"smooth\": true, \"connectNulls\": false,\n            \"lineStyle\": { \"width\": 1, \"color\": \"#F2CC0C\" },\n            \"itemStyle\": { \"color\": \"#F2CC0C\" }\n        },\n        {\n            \"name\": \"Circuito A · V\",\n            \"metric\": \"V\",\n            \"type\": \"line\",\n            \"yAxisIndex\": 2,\n            \"data\": [],\n            \"smooth\": true, \"connectNulls\": false,\n            \"lineStyle\": { \"width\": 1, \"color\": \"#d2a8ff\" },\n            \"itemStyle\": { \"color\": \"#d2a8ff\" }\n        },\n        {\n            \"name\": \"Circuito A · A\",\n            \"metric\": \"A\",\n            \"type\": \"line\",\n            \"yAxisIndex\": 3,\n            \"data\": [],\n            \"smooth\": true, \"connectNulls\": false,\n            \"lineStyle\": { \"width\": 1, \"color\": \"#ffa657\" },\n            \"itemStyle\": { \"color\": \"#ffa657\" }\n        },\n        {\n            \"name\": \"Red · Hz\",\n            \"metric\": \"Hz\",\n            \"type\": \"line\",\n            \"yAxisIndex\": 4,\n            \"data\": [],\n            \"smooth\": false, \"connectNulls\": false,\n            \"lineStyle\": { \"width\": 1, \"color\": \"#79c0ff\" },\n            \"itemStyle\": { \"color\": \"#79c0ff\" }\n        },\n        {\n            \"name\": \"Circuito A · cos φ\",\n            \"metric\": \"cos φ\",\n            \"type\": \"line\",\n            \"yAxisIndex\": 5,\n            \"data\": [],\n            \"smooth\": true, \"connectNulls\": false,\n            \"lineStyle\": { \"width\": 1, \"color\": \"#56d364\" },\n            \"itemStyle\": { \"color\": \"#56d364\" }\n        }\n    ],\n    \"colLabels\": {\n        \"Circuito A\": \"col-circuito-a\",\n        \"Circuito B\": \"col-circuito-b\",\n        \"Circuito C\": \"col-circuito-c\",\n        \"Temperatura\": \"col-temperatura\",\n        \"Red\": \"col-red\"\n    }\n}",
+        "fields": "[]",
+        "intervalMode": "fixed",
+        "intervalFixed": "100000",
+        "intervalMin": 1000,
+        "intervalMax": 10000,
+        "startupDelay": "2000",
+        "debugActive": false,
+        "x": 250,
+        "y": 460,
+        "wires": [
+            [
+                "602be0ed62b06752"
+            ]
+        ]
+    },
+    {
+        "id": "602be0ed62b06752",
+        "type": "rbe",
+        "z": "insight-mongo-tab",
+        "g": "401bd8945de1bbba",
+        "name": "",
+        "func": "rbe",
+        "gap": "",
+        "start": "",
+        "inout": "out",
+        "septopics": true,
+        "property": "payload",
+        "topi": "topic",
+        "x": 470,
+        "y": 460,
+        "wires": [
+            [
+                "insight-mongo-node"
+            ]
+        ]
+    },
+    {
+        "id": "75bae3cad7f9a834",
+        "type": "function",
+        "z": "insight-mongo-tab",
+        "g": "b48be5b81f5a00a3",
+        "name": "Add-Timestamp ",
+        "func": "//almacenar el dato original\nconst originalPayload = msg.payload;\n// formatear a modo time series de mongo dB\nmsg.payload = [{\n    time: new Date(),\n    data: originalPayload\n}]\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 500,
+        "y": 160,
+        "wires": [
+            [
+                "ba25c4f15695b9a9"
+            ]
+        ]
+    },
+    {
+        "id": "ba25c4f15695b9a9",
+        "type": "function",
+        "z": "insight-mongo-tab",
+        "g": "b48be5b81f5a00a3",
+        "name": "Normalizacion",
+        "func": "const deviceType = msg.topic;\nconst raw = msg.payload[0].data;\n\nconst normalized = {\n    time: new Date(),\n    device: deviceType,\n    device_model: raw.device_model || \"unknown\",\n    metrics: {\n        voltage:        raw.voltage || raw.voltage_a || null,\n        voltage_a:      raw.voltage_a || null,\n        voltage_b:      raw.voltage_b || null,\n        voltage_c:      raw.voltage_c || null,\n        current:        raw.current || null,\n        current_a:      raw.current_a || null,\n        current_b:      raw.current_b || null,\n        current_c:      raw.current_c || null,\n        power:          raw.power || null,\n        power_a:        raw.power_a || null,\n        power_b:        raw.power_b || null,\n        power_c:        raw.power_c || null,\n        power_factor:   raw.power_factor || null,\n        ac_frequency:   raw.ac_frequency || null,\n        temperature:    raw.temperature || null\n    },\n    raw_data: raw\n};\n\nmsg.payload = normalized;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 760,
+        "y": 160,
+        "wires": [
+            [
+                "4f5d1d1b71c53795"
+            ]
+        ]
+    },
+    {
+        "id": "75cb8c717e76ee01",
+        "type": "inject",
+        "z": "insight-mongo-tab",
+        "g": "d9e1ef904a8593d2",
+        "name": "",
+        "props": [
+            {
+                "p": "payload.action",
+                "v": "set_horas",
+                "vt": "str"
+            },
+            {
+                "p": "payload.value",
+                "v": "0.25",
+                "vt": "num"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "2",
+        "topic": "",
+        "x": 220,
+        "y": 300,
+        "wires": [
+            [
+                "insight-mongo-dispatcher"
+            ]
+        ]
+    },
+    {
+        "id": "3f90e6f247030547",
+        "type": "comment",
+        "z": "insight-mongo-tab",
+        "g": "b48be5b81f5a00a3",
+        "name": "node-red-contrib-mongodb4",
+        "info": "",
+        "x": 1080,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "insight-mongo-group",
+        "type": "ui-group",
+        "name": "Insight MongoDB",
+        "page": "insight-mongo-page",
+        "width": 14,
+        "height": 1,
+        "order": 1,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "75a0bc5a446b5d67",
+        "type": "mongodb4-client",
+        "name": "",
+        "protocol": "mongodb",
+        "hostname": "",
+        "port": "",
+        "dbName": "local",
+        "appName": "",
+        "authSource": "",
+        "authMechanism": "DEFAULT",
+        "tls": false,
+        "tlsCAFile": "",
+        "tlsCertificateKeyFile": "",
+        "tlsInsecure": false,
+        "connectTimeoutMS": "30000",
+        "socketTimeoutMS": "0",
+        "minPoolSize": "0",
+        "maxPoolSize": "100",
+        "maxIdleTimeMS": "0",
+        "uri": "mongodb://localhost:27017",
+        "advanced": "{}",
+        "uriTabActive": "tab-uri-advanced"
+    },
+    {
+        "id": "insight-mongo-page",
+        "type": "ui-page",
+        "name": "Insight MongoDB",
+        "ui": "2880a75520fcc1d5",
+        "path": "/insight-mongo",
+        "icon": "database",
+        "layout": "grid",
+        "theme": "insight-mongo-theme",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": "0",
+                "cols": "3"
+            },
+            {
+                "name": "Tablet",
+                "px": "576",
+                "cols": "6"
+            },
+            {
+                "name": "Small Desktop",
+                "px": "768",
+                "cols": "9"
+            },
+            {
+                "name": "Desktop",
+                "px": "1024",
+                "cols": "12"
+            }
+        ],
+        "order": 10,
+        "className": "",
+        "visible": true,
+        "disabled": false
+    },
+    {
+        "id": "2880a75520fcc1d5",
+        "type": "ui-base",
+        "name": "My Dashboard",
+        "path": "/dashboard",
+        "appIcon": "",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-notification",
+            "ui-control"
+        ],
+        "showPathInSidebar": false,
+        "headerContent": "page",
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": true,
+        "notificationDisplayTime": 1,
+        "showDisconnectNotification": true,
+        "allowInstall": false
+    },
+    {
+        "id": "insight-mongo-theme",
+        "type": "ui-theme",
+        "name": "Dark EnergIAM",
+        "colors": {
+            "surface": "#24292e",
+            "primary": "#58a6ff",
+            "bgPage": "#0d1117",
+            "groupBg": "#161b22",
+            "groupOutline": "#30363d"
+        },
+        "sizes": {
+            "density": "default",
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    }
+]
