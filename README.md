@@ -1,5 +1,5 @@
-# node-red-dashboard-2-insight-energiam
-
+# node-red-dashboard-2-insight-energiam 
+![Insight](icons/energiam.png) 
 Widget de visualización de series temporales con **ECharts 5.5.1 offline**, estilo Grafana, para **FlowFuse Dashboard 2.0**. Parte del ecosistema [EnergIAM](https://github.com/energiamEcoTouch).
 
 ---
@@ -248,8 +248,8 @@ El nodo emite automáticamente cuando el usuario interactúa con el widget:
 
 ```json
 {
-  "Circuito A": "z2m-tghc-H404_LP001",
-  "Circuito B": "z2m-tghc-H406_LP002",
+  "Circuito A": "Tablero_001",
+  "Circuito B": "Tablero_002",
   "Temperatura": "sensor-temp-01"
 }
 ```
@@ -345,14 +345,12 @@ npm publish
 
 | Componente | Tecnología |
 |---|---|
-| Virtualización | Proxmox VE |
-| Administración | Komodo |
 | IoT | Node-RED + Zigbee2MQTT + MQTT |
-| Bases de datos | MongoDB / InfluxDB |
-| Visualización | Grafana + Dashboard 2.0 |
+| Bases de datos | MongoDB / InfluxDB / Postgre|
+| Visualización | Echart Apache + Dashboard 2.0 |
 
 ---
 
 ## Licencia
 
-MIT — EnergIAM EcoTouch 2025
+MIT — EnergIAM EcoTouch 2025 by Adrian Iskow
