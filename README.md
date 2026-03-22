@@ -1,5 +1,5 @@
 # node-red-dashboard-2-insight-energiam 
-![Insight](icons/energiam.png) 
+![Insight](nodes/icons/energiam.png) 
 Widget de visualización de series temporales con **ECharts 5.5.1 offline**, estilo Grafana, para **FlowFuse Dashboard 2.0**. Parte del ecosistema [EnergIAM](https://github.com/energiamEcoTouch).
 
 ---
