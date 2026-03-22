@@ -120,6 +120,60 @@ fields:
 
 ---
 
+### Flow adaptador PostgreSQL / TimescaleDB
+
+Ingreso de datos desde el nodo device-simulator hacia PostgreSQL. Rama de query que responde a los eventos del widget usando SQL estándar y formatea las series para ECharts.
+
+Requiere el nodo `node-red-contrib-postgresql` instalado en Node-RED.
+
+![Insight PostgreSQL Flow](examples/insight-postgre.png)
+
+📄 [`examples/flows_postgre.json`](examples/flows_postgre.json)
+
+**Configuración necesaria antes de importar el flujo:**
+
+1. Tener PostgreSQL corriendo (local o remoto)
+2. Crear la base de datos y la tabla:
+```sql
+CREATE DATABASE energiam;
+
+CREATE TABLE metricas (
+    time        TIMESTAMPTZ NOT NULL,
+    measurement VARCHAR(100),
+    power_a     FLOAT,
+    power_b     FLOAT,
+    power_c     FLOAT,
+    voltage_a   FLOAT,
+    current_a   FLOAT,
+    temperature FLOAT
+);
+```
+3. Abrir el nodo de configuración **PostgreSQL Insight** y completar:
+   - Host: `localhost`
+   - Port: *(tu puerto)*
+   - Database: `energiam`
+   - User: `postgres`
+   - Password: *(tu contraseña)*
+
+**Esquema de tabla:**
+
+```
+tabla: metricas
+columns:
+  time        TIMESTAMPTZ   timestamp del registro
+  measurement VARCHAR(100)  nombre del circuito/dispositivo
+  power_a     FLOAT         (W)
+  power_b     FLOAT         (W)
+  power_c     FLOAT         (W)
+  voltage_a   FLOAT         (V)
+  current_a   FLOAT         (A)
+  temperature FLOAT         (°C)
+```
+
+> Compatible también con **TimescaleDB** — simplemente ejecutar `SELECT create_hypertable('metricas', 'time');` después de crear la tabla.
+
+---
+
 ## Contrato I/O
 
 ### SALIDA — Query Request
@@ -245,9 +299,12 @@ node-red-dashboard-2-insight-energiam/
 ├── examples/
 │   ├── insight-test-flow.png
 │   ├── insight-mongoDB-flow.png
+│   ├── insight-influxDB.png
+│   ├── insight-postgre.png
 │   ├── flows_insight_test.json
 │   ├── flows_insight_mongo.json
-│   └── flows_influxDB.json
+│   ├── flows_influxDB.json
+│   └── flows_postgre.json
 ├── nodes/
 │   ├── icons/
 │   │   └── energiam.png

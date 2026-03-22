@@ -1,0 +1,335 @@
+[
+    {
+        "id": "insight-pg-tab",
+        "type": "tab",
+        "label": "Insight — PostgreSQL/TimescaleDB",
+        "disabled": false,
+        "info": "Adaptador PostgreSQL con TimescaleDB para nodo ui-insight.\nUsa el nodo node-red-contrib-postgresql.\n\nEsquema esperado (una tabla por colección o tabla única con columna device):\n  CREATE TABLE mediciones (\n    time        TIMESTAMPTZ NOT NULL,\n    device      TEXT NOT NULL,\n    power       DOUBLE PRECISION,\n    power_a     DOUBLE PRECISION,\n    power_b     DOUBLE PRECISION,\n    power_c     DOUBLE PRECISION,\n    voltage_a   DOUBLE PRECISION,\n    current_a   DOUBLE PRECISION,\n    temperature DOUBLE PRECISION\n  );\n  SELECT create_hypertable('mediciones', 'time');\n\nConfigurar:\n1. El nodo postgresql con tu conexión\n2. La lista de colecciones (valores de device) en el editor del nodo insight"
+    },
+    {
+        "id": "pg-writer-group",
+        "type": "group",
+        "z": "insight-pg-tab",
+        "name": "Ingreso de datos a PostgreSQL",
+        "style": {
+            "stroke": "#92d04f",
+            "fill": "#e3f3d3",
+            "label": true
+        },
+        "nodes": [
+            "pg-simulator",
+            "pg-to-insert",
+            "pg-insert-query"
+        ],
+        "x": 54,
+        "y": 99,
+        "w": 722,
+        "h": 82
+    },
+    {
+        "id": "3332b7a680a72238",
+        "type": "group",
+        "z": "insight-pg-tab",
+        "name": "Query",
+        "style": {
+            "stroke": "#c8e7a7",
+            "fill": "#e3f3d3",
+            "label": true
+        },
+        "nodes": [
+            "insight-pg-dispatcher",
+            "insight-pg-format",
+            "insight-pg-query",
+            "da6b6c44956f30a4"
+        ],
+        "x": 54,
+        "y": 239,
+        "w": 1092,
+        "h": 82
+    },
+    {
+        "id": "insight-pg-node",
+        "type": "ui-insight",
+        "z": "insight-pg-tab",
+        "name": "Insight PostgreSQL",
+        "group": "insight-pg-group",
+        "order": 1,
+        "width": 14,
+        "height": 14,
+        "defaultHoras": "0.25",
+        "x": 1250,
+        "y": 280,
+        "wires": [
+            [
+                "insight-pg-dispatcher"
+            ]
+        ]
+    },
+    {
+        "id": "insight-pg-dispatcher",
+        "type": "function",
+        "z": "insight-pg-tab",
+        "g": "3332b7a680a72238",
+        "name": "Dispatcher — preparar query PostgreSQL",
+        "func": "const p = msg.payload;\nif (!p || !p.action) return null;\n\nif (p.action !== 'set_horas' && p.action !== 'set_absoluto') return null;\n\nlet desde, hasta;\n\nif (p.action === 'set_horas') {\n    const horas = parseFloat(p.value) || 0.25;\n    hasta = new Date().toISOString();\n    desde = new Date(Date.now() - horas * 3600000).toISOString();\n} else {\n    desde = p.value.desde;\n    hasta = p.value.hasta;\n}\n\nconst savedState = p.value && typeof p.value === 'object' ? p.value : {};\nconst colsAct = savedState.colsAct || ['circuito-a'];\n\nconst inClause = colsAct.map(c => `'${c}'`).join(', ');\n\nmsg.payload = `\n    SELECT time, measurement, power_a, power_b, power_c, voltage_a, current_a, temperature\n    FROM metricas\n    WHERE time >= '${desde}'\n      AND time <= '${hasta}'\n      AND measurement IN (${inClause})\n    ORDER BY measurement, time ASC\n`;\n\nmsg.colecciones = colsAct;\nmsg.desde = desde;\nmsg.hasta = hasta;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 280,
+        "wires": [
+            [
+                "insight-pg-query"
+            ]
+        ]
+    },
+    {
+        "id": "insight-pg-format",
+        "type": "function",
+        "z": "insight-pg-tab",
+        "g": "3332b7a680a72238",
+        "name": "Formatear series ECharts",
+        "func": "// ── Paleta de colores ────────────────────────────────────────────────────\nconst paleta = [\n    '#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657',\n    '#79c0ff','#56d364','#ff7b72','#bc8cff','#ffb366',\n    '#388bfd','#2ea043','#da3633','#8957e5'\n];\n\nconst toKW = w => (w != null) ? parseFloat((w / 1000).toFixed(3)) : null;\nconst toF  = (v, d) => (v != null) ? parseFloat(parseFloat(v).toFixed(d)) : null;\nconst toMs = d => new Date(d.time).getTime();\n\nconst mkSerie = (name, metric, yIdx, color, data, dash) => ({\n    name, metric,\n    type: 'line',\n    yAxisIndex: yIdx,\n    data,\n    smooth: true,\n    connectNulls: false,\n    lineStyle: { width: 1, color, ...(dash ? { type: dash } : {}) },\n    itemStyle: { color }\n});\n\n// PostgreSQL devuelve array plano de rows\nconst rows        = msg.payload || [];\nconst colecciones = msg.colecciones || [];\nconst series      = [];\nconst colLabels   = {};\n\n// Agrupar rows por device\nconst porDevice = {};\nrows.forEach(row => {\n    const key = row.measurement || row.device;\n    if (!porDevice[key]) porDevice[key] = [];\n    porDevice[key].push(row);\n});\n\nlet colIdx = 0;\nfor (const col of colecciones) {\n    const docs = porDevice[col] || [];\n    if (!docs.length) { colIdx++; continue; }\n\n    const label = col;\n    const color = paleta[colIdx % paleta.length];\n    const m0    = docs[0];\n\n    // kW total\n    if (m0.power !== undefined || m0.power_a !== undefined) {\n        const data = docs.map(d => {\n            const w = (d.power != null) ? d.power\n                    : ((d.power_a || 0) + (d.power_b || 0) + (d.power_c || 0));\n            return [toMs(d), toKW(w)];\n        }).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW', 'kW', 0, color, data));\n    }\n    if (m0.power_a !== undefined && m0.power_a !== null) {\n        const data = docs.map(d => [toMs(d), toKW(d.power_a)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-A', 'kW-A', 0, color, data, 'dashed'));\n    }\n    if (m0.power_b !== undefined && m0.power_b !== null) {\n        const data = docs.map(d => [toMs(d), toKW(d.power_b)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-B', 'kW-B', 0, color, data, 'dotted'));\n    }\n    if (m0.power_c !== undefined && m0.power_c !== null) {\n        const data = docs.map(d => [toMs(d), toKW(d.power_c)]).filter(p => p[1] !== null);\n        if (data.length) series.push(mkSerie(label + ' · kW-C', 'kW-C', 0, color, data, 'dotted'));\n    }\n    if (m0.temperature !== undefined && m0.temperature !== null) {\n        const data = docs.map(d => [toMs(d), toF(d.temperature, 1)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · °C', '°C', 1, color, data));\n    }\n    if (m0.voltage_a !== undefined && m0.voltage_a !== null) {\n        const data = docs.map(d => [toMs(d), toF(d.voltage_a, 1)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · V', 'V', 2, color, data));\n    }\n    if (m0.current_a !== undefined && m0.current_a !== null) {\n        const data = docs.map(d => [toMs(d), toF(d.current_a, 2)]).filter(p => p[1] !== null && p[1] > 0);\n        if (data.length) series.push(mkSerie(label + ' · A', 'A', 3, color, data));\n    }\n\n    colLabels[label] = col;\n    colIdx++;\n}\n\nmsg.topic   = 'insight/data';\nmsg.payload = { series, colLabels };\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1010,
+        "y": 280,
+        "wires": [
+            [
+                "insight-pg-node"
+            ]
+        ]
+    },
+    {
+        "id": "insight-pg-query",
+        "type": "postgresql",
+        "z": "insight-pg-tab",
+        "g": "3332b7a680a72238",
+        "name": "Query Postgre SQL 18",
+        "query": "{{{msg.payload}}}",
+        "postgreSQLConfig": "insight-pg-client",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 760,
+        "y": 280,
+        "wires": [
+            [
+                "insight-pg-format"
+            ]
+        ]
+    },
+    {
+        "id": "da6b6c44956f30a4",
+        "type": "inject",
+        "z": "insight-pg-tab",
+        "g": "3332b7a680a72238",
+        "name": "",
+        "props": [
+            {
+                "p": "payload.action",
+                "v": "set_horas",
+                "vt": "str"
+            },
+            {
+                "p": "payload.value",
+                "v": "0.25",
+                "vt": "num"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "2",
+        "topic": "",
+        "x": 160,
+        "y": 280,
+        "wires": [
+            [
+                "insight-pg-dispatcher"
+            ]
+        ]
+    },
+    {
+        "id": "pg-simulator",
+        "type": "device-simulator",
+        "z": "insight-pg-tab",
+        "g": "pg-writer-group",
+        "name": "Simulador circuito-a",
+        "topic": "pg/write",
+        "template": "{\n    \"measurement\": \"circuito-a\",\n    \"power_a\": 1200,\n    \"power_b\": 800,\n    \"power_c\": 600,\n    \"voltage_a\": 220.5,\n    \"current_a\": 5.4,\n    \"temperature\": 23.5\n}",
+        "fields": "[{\"key\":\"power_a\",\"enabled\":true,\"min\":800,\"max\":1600,\"triggerOnChange\":true},{\"key\":\"power_b\",\"enabled\":true,\"min\":400,\"max\":1100,\"triggerOnChange\":true},{\"key\":\"power_c\",\"enabled\":true,\"min\":300,\"max\":700,\"triggerOnChange\":true},{\"key\":\"voltage_a\",\"enabled\":true,\"min\":218,\"max\":223,\"triggerOnChange\":true},{\"key\":\"current_a\",\"enabled\":true,\"min\":3,\"max\":8,\"triggerOnChange\":true},{\"key\":\"temperature\",\"enabled\":true,\"min\":18,\"max\":28,\"triggerOnChange\":true}]",
+        "intervalMode": "random",
+        "intervalFixed": "10000",
+        "intervalMin": 5000,
+        "intervalMax": 15000,
+        "startupDelay": 0,
+        "debugActive": false,
+        "x": 200,
+        "y": 140,
+        "wires": [
+            [
+                "pg-to-insert"
+            ]
+        ]
+    },
+    {
+        "id": "pg-to-insert",
+        "type": "function",
+        "z": "insight-pg-tab",
+        "g": "pg-writer-group",
+        "name": "Preparar INSERT",
+        "func": "const d = msg.payload;\nif (!d) return null;\n\nconst measurement = d.measurement || 'circuito-a';\n\nmsg.payload = `\n    INSERT INTO metricas (time, measurement, power_a, power_b, power_c, voltage_a, current_a, temperature)\n    VALUES (\n        NOW(),\n        '${measurement}',\n        ${d.power_a || 0},\n        ${d.power_b || 0},\n        ${d.power_c || 0},\n        ${d.voltage_a || 0},\n        ${d.current_a || 0},\n        ${d.temperature || 0}\n    )\n`;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 410,
+        "y": 140,
+        "wires": [
+            [
+                "pg-insert-query"
+            ]
+        ]
+    },
+    {
+        "id": "pg-insert-query",
+        "type": "postgresql",
+        "z": "insight-pg-tab",
+        "g": "pg-writer-group",
+        "name": "Escribir en PostgreSQL",
+        "query": "{{{msg.payload}}}",
+        "postgreSQLConfig": "insight-pg-client",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 640,
+        "y": 140,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "insight-pg-group",
+        "type": "ui-group",
+        "name": "Insight PostgreSQL",
+        "page": "insight-pg-page",
+        "width": 14,
+        "height": 1,
+        "order": 1,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "insight-pg-client",
+        "type": "postgreSQLConfig",
+        "name": "PostgreSQL Insight",
+        "host": "localhost",
+        "hostFieldType": "str",
+        "port": "5433",
+        "portFieldType": "num",
+        "database": "energiam",
+        "databaseFieldType": "str",
+        "ssl": "false",
+        "sslFieldType": "bool",
+        "applicationName": "node-red",
+        "applicationNameType": "str",
+        "max": "10",
+        "maxFieldType": "num",
+        "idle": "1000",
+        "idleFieldType": "num",
+        "connectionTimeout": "10000",
+        "connectionTimeoutFieldType": "num",
+        "user": "postgres",
+        "userFieldType": "str",
+        "password": "postgre555",
+        "passwordFieldType": "str"
+    },
+    {
+        "id": "insight-pg-page",
+        "type": "ui-page",
+        "name": "Insight PostgreSQL",
+        "ui": "2880a75520fcc1d5",
+        "path": "/insight-pg",
+        "icon": "database",
+        "layout": "grid",
+        "theme": "insight-pg-theme",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": "0",
+                "cols": "3"
+            },
+            {
+                "name": "Tablet",
+                "px": "576",
+                "cols": "6"
+            },
+            {
+                "name": "Small Desktop",
+                "px": "768",
+                "cols": "9"
+            },
+            {
+                "name": "Desktop",
+                "px": "1024",
+                "cols": "12"
+            }
+        ],
+        "order": 12,
+        "className": "",
+        "visible": true,
+        "disabled": false
+    },
+    {
+        "id": "2880a75520fcc1d5",
+        "type": "ui-base",
+        "name": "My Dashboard",
+        "path": "/dashboard",
+        "appIcon": "",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-notification",
+            "ui-control"
+        ],
+        "showPathInSidebar": false,
+        "headerContent": "page",
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": true,
+        "notificationDisplayTime": 1,
+        "showDisconnectNotification": true,
+        "allowInstall": false
+    },
+    {
+        "id": "insight-pg-theme",
+        "type": "ui-theme",
+        "name": "Dark EnergIAM",
+        "colors": {
+            "surface": "#24292e",
+            "primary": "#58a6ff",
+            "bgPage": "#0d1117",
+            "groupBg": "#161b22",
+            "groupOutline": "#30363d"
+        },
+        "sizes": {
+            "density": "default",
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    }
+]
